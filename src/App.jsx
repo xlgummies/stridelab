@@ -135,75 +135,7 @@ Analyze the trend over this period: pace progression, aerobic efficiency, HR at 
 /* ============================================================
    UI
 
-const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Saira:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-.sl-root *{box-sizing:border-box;margin:0;padding:0}
-.sl-root{
-  --bg:#090b0e; --panel:#13171c; --panel2:#1a1f26; --line:#262d36;
-  --text:#e8edf2; --dim:#7f8b98; --dim2:#566270;
-  --accent:#c6f24e; --hr:#ff5a4d; --pace:#4cc9f0; --cad:#b794f6; --elev:#6b7785;
-  --font-d:'Saira Condensed',sans-serif; --font-b:'Saira',sans-serif; --font-m:'IBM Plex Mono',monospace;
-  font-family:var(--font-b); background:var(--bg); color:var(--text);
-  min-height:100vh; width:100%; -webkit-font-smoothing:antialiased;
-}
-.sl-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:
-    radial-gradient(1200px 500px at 80% -10%, rgba(198,242,78,.06), transparent 60%),
-    radial-gradient(900px 500px at -10% 20%, rgba(76,201,240,.05), transparent 60%);
-}
-.sl-wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 16px 80px}
-.sl-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 0 12px;flex-wrap:wrap}
-.sl-logo{font-family:var(--font-d);font-weight:700;font-size:26px;letter-spacing:.02em;text-transform:uppercase;display:flex;align-items:center;gap:9px}
-.sl-logo b{color:var(--accent)}
-.sl-logo .tk{display:inline-block;width:10px;height:22px;background:var(--accent);transform:skewX(-12deg);box-shadow:14px 0 0 var(--hr),28px 0 0 var(--pace)}
-.sl-sub{font-family:var(--font-m);font-size:11px;color:var(--dim2);letter-spacing:.18em;text-transform:uppercase}
-.sl-tabs{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px;flex-wrap:wrap}
-.sl-tab{font-family:var(--font-d);text-transform:uppercase;letter-spacing:.06em;font-size:14px;font-weight:600;color:var(--dim);
-  background:none;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;transition:.15s}
-.sl-tab:hover{color:var(--text)}
-.sl-tab.on{background:var(--accent);color:#0a0d06}
-.sl-btn{font-family:var(--font-d);text-transform:uppercase;letter-spacing:.05em;font-weight:600;font-size:13px;
-  background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:9px 14px;border-radius:9px;cursor:pointer;transition:.15s}
-.sl-btn:hover{border-color:var(--accent);color:var(--accent)}
-.sl-btn.primary{background:var(--accent);color:#0a0d06;border-color:var(--accent)}
-.sl-btn.primary:hover{filter:brightness(1.08);color:#0a0d06}
-.sl-btn:disabled{opacity:.45;cursor:not-allowed}
-.sl-grid{display:grid;gap:14px}
-.sl-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
-.sl-h{font-family:var(--font-d);text-transform:uppercase;letter-spacing:.05em;font-weight:600;font-size:15px;color:var(--dim);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.sl-h .dot{width:7px;height:7px;border-radius:2px;background:var(--accent)}
-.stat-label{font-family:var(--font-m);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)}
-.stat-val{font-family:var(--font-d);font-weight:700;line-height:1;letter-spacing:.01em}
-.stat-unit{font-family:var(--font-b);font-size:13px;color:var(--dim);font-weight:500}
-.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 15px;position:relative;overflow:hidden}
-.kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
-.kpi.hr::after{background:var(--hr)} .kpi.pace::after{background:var(--pace)} .kpi.cad::after{background:var(--cad)}
-.row{display:flex;align-items:center;gap:10px}
-.muted{color:var(--dim)} .mono{font-family:var(--font-m)}
-.act-row{display:flex;align-items:center;gap:14px;padding:12px 6px;border-bottom:1px solid var(--line);cursor:pointer;transition:.12s;border-radius:8px}
-.act-row:hover{background:var(--panel2)}
-.act-badge{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  font-family:var(--font-d);font-weight:700;font-size:18px;background:var(--panel2);border:1px solid var(--line)}
-.chip{font-family:var(--font-m);font-size:11px;padding:3px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
-.ai-box{background:linear-gradient(180deg,rgba(198,242,78,.05),transparent);border:1px solid var(--line);border-radius:12px;padding:15px;white-space:pre-wrap;line-height:1.55;font-size:14.5px}
-.ai-box .ai-tag{font-family:var(--font-m);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:9px}
-.split-bar{height:9px;border-radius:5px;background:var(--pace);opacity:.9}
-.zone-seg{height:26px;display:flex;align-items:center;justify-content:center;font-family:var(--font-m);font-size:11px;color:#0a0d06;font-weight:500}
-.empty{text-align:center;padding:46px 20px;color:var(--dim)}
-.empty h2{font-family:var(--font-d);text-transform:uppercase;letter-spacing:.04em;font-size:26px;color:var(--text);margin-bottom:10px}
-input.sl-in,textarea.sl-in{background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--text);font-family:var(--font-b);font-size:14px;padding:9px 12px;width:100%}
-input.sl-in:focus,textarea.sl-in:focus{outline:none;border-color:var(--accent)}
-.coach-msg{padding:11px 14px;border-radius:12px;margin-bottom:10px;line-height:1.5;font-size:14.5px;white-space:pre-wrap}
-.coach-msg.u{background:var(--panel2);border:1px solid var(--line);margin-left:36px}
-.coach-msg.a{background:linear-gradient(180deg,rgba(198,242,78,.05),transparent);border:1px solid var(--line);margin-right:18px}
-.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--dim2);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
-@keyframes sp{to{transform:rotate(360deg)}}
-.fade{animation:fade .35s ease both}
-@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.back{font-family:var(--font-d);text-transform:uppercase;letter-spacing:.05em;font-size:13px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0}
-.back:hover{color:var(--accent)}
-a.sl-link{color:var(--accent);text-decoration:none}
-`;
+
 
 function KPI({ label, value, unit, tone }) {
   return (
@@ -714,16 +646,16 @@ export default function App() {
   const open = (id) => { setOpenId(id); setTab("acts"); };
 
   if (session === undefined)
-    return (<div className="sl-root"><style>{CSS}</style><div className="sl-wrap"><div className="sl-panel" style={{ marginTop: 60 }}><span className="spin" /> loading…</div></div></div>);
+    return (<div className="sl-root"><div className="sl-wrap"><div className="sl-panel" style={{ marginTop: 60 }}><span className="spin" /> loading…</div></div></div>);
 
   if (!session)
-    return (<div className="sl-root"><style>{CSS}</style><div className="sl-bg" /><div className="sl-wrap"><Login /></div></div>);
+    return (<div className="sl-root"><div className="sl-bg" /><div className="sl-wrap"><Login /></div></div>);
 
   const TABS = [["dash", "Dashboard"], ["acts", "Activities"], ["trends", "Trends"], ["coach", "Coach"], ["settings", "Settings"]];
 
   return (
     <div className="sl-root">
-      <style>{CSS}</style>
+      
       <div className="sl-bg" />
       <div className="sl-wrap">
         <div className="sl-top">
