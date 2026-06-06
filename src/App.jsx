@@ -137,6 +137,7 @@ Analyze the trend over this period: pace progression, aerobic efficiency, HR at 
 
 
 
+*/
 function KPI({ label, value, unit, tone }) {
   return (
     <div className={`kpi ${tone || ""}`}>
