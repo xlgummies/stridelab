@@ -384,6 +384,84 @@ function Login() {
 function Settings({ units, setUnits, maxHr, setMaxHr }) {
   return <div className='sl-panel fade'><div className='sl-h'><span className='dot' />Settings</div><div className='sl-grid' style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 16 }}><div><div className='stat-label' style={{ marginBottom: 6 }}>Units</div><div className='sl-tabs' style={{ display: 'inline-flex' }}><button className={`sl-tab ${units === 'km' ? 'on' : ''}`} onClick={() => setUnits('km')}>km</button><button className={`sl-tab ${units === 'mi' ? 'on' : ''}`} onClick={() => setUnits('mi')}>mi</button></div></div><div><div className='stat-label' style={{ marginBottom: 6 }}>Max heart rate (for zones and load)</div><input className='sl-in' type='number' style={{ maxWidth: 120 }} value={maxHr} onChange={(e) => setMaxHr(Math.max(120, Math.min(220, +e.target.value || 185)))} /></div></div></div>;
 }
+
+// ===== Race IQ (race-time prediction) =====
+function bestRecentEffort(acts, days = 90, minKm = 3) {
+  const anchor = anchorTime(acts); let best = null;
+  acts.forEach((a) => {
+    if (anchor - new Date(a.startTime).getTime() >= days * DAY) return;
+    const km = (a.distance || 0) / KM, sec = a.duration || 0;
+    if (km < minKm || sec <= 0) return;
+    const speed = km / (sec / 3600), score = speed * Math.pow(km, 0.15);
+    if (!best || score > best.score) best = { km, sec, score, when: a.startTime };
+  });
+  return best;
+}
+function avgWeek(acts, nWeeks = 12) {
+  const anchor = anchorTime(acts), cut = anchor - nWeeks * 7 * DAY;
+  const wk = acts.filter((a) => new Date(a.startTime).getTime() >= cut);
+  return { km: sum(wk, (a) => a.distance) / KM / nWeeks, hrs: sum(wk, (a) => a.duration) / 3600 / nWeeks };
+}
+function recencyVolume(acts, nWeeks = 6) {
+  const anchor = anchorTime(acts), weeks = Array.from({ length: nWeeks }, () => 0);
+  acts.forEach((a) => { const idx = Math.floor((anchor - new Date(a.startTime).getTime()) / (7 * DAY)); if (idx >= 0 && idx < nWeeks) weeks[idx] += (a.distance || 0) / KM; });
+  let v = 0, w = 0; weeks.forEach((km, i) => { const wt = nWeeks - i; v += km * wt; w += wt; });
+  return w ? v / w : 0;
+}
+function predictRaceTime(acts, targetKm, units, maxHr) {
+  const be = bestRecentEffort(acts); if (!be) return null;
+  const likely = be.sec * Math.pow(targetKm / be.km, 1.06);
+  const acwr = trainingProfile(acts, units, maxHr).acwr;
+  let fresh = 0.9;
+  if (acwr != null) { const fatigue = Math.max(5, Math.min(100, Math.round(acwr * 45))); fresh = Math.max(0.2, Math.min(0.99, (100 - fatigue * 0.7 - Math.max(0, (acwr - 1.3)) * 40) / 100)); }
+  const recVol = recencyVolume(acts), targetPace = likely / targetKm, anchor = anchorTime(acts);
+  let spec = 0, specTot = 0;
+  acts.forEach((a) => { if (anchor - new Date(a.startTime).getTime() >= 28 * DAY) return; const km = (a.distance || 0) / KM; specTot += km; if (a.avgPace && Math.abs(a.avgPace - targetPace) / targetPace < 0.06) spec += km; });
+  const specificity = specTot ? spec / specTot : 0, spread = 0.045 - 0.015 * fresh - 0.012 * specificity;
+  return { targetKm, likely, floor: likely * (1 - spread), ceiling: likely * (1 + spread * 1.3), basis: be, recVol, freshness: Math.round(fresh * 100), specificity: Math.round(specificity * 100) };
+}
+function RaceIQ({ acts, units, maxHr }) {
+  const DISTS = [['5K', 5], ['10K', 10], ['Half', 21.0975], ['Marathon', 42.195]];
+  const [dist, setDist] = useState('Half');
+  const targetKm = DISTS.find((d) => d[0] === dist)[1];
+  const p = useMemo(() => predictRaceTime(acts, targetKm, units, maxHr), [acts, targetKm, units, maxHr]);
+  const week = useMemo(() => avgWeek(acts), [acts]);
+  const all = useMemo(() => DISTS.map(([name, km]) => ({ name, p: predictRaceTime(acts, km, units, maxHr) })), [acts, units, maxHr]);
+  return <div className='sl-grid fade' style={{ gridTemplateColumns: '1fr' }}>
+    <div className='sl-grid' style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
+      <KPI label='Avg week' value={week.km.toFixed(0)} unit={' ' + distUnit(units)} />
+      <KPI label='Hours / week' value={week.hrs.toFixed(1)} unit=' h' tone='cad' />
+      <KPI label='Recent volume' value={recencyVolume(acts).toFixed(0)} unit={' ' + distUnit(units) + '/wk'} tone='pace' />
+    </div>
+    <div className='sl-panel'>
+      <div className='row' style={{ justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+        <div className='sl-h' style={{ margin: 0 }}><span className='dot' style={{ background: 'var(--accent)' }} />Race prediction</div>
+        <div className='sl-tabs'>{DISTS.map(([name]) => <button key={name} className={`sl-tab ${dist === name ? 'on' : ''}`} onClick={() => setDist(name)}>{name}</button>)}</div>
+      </div>
+      {p ? <>
+        <div className='row' style={{ alignItems: 'flex-end', gap: 28, flexWrap: 'wrap' }}>
+          <div><div className='stat-label'>Floor</div><div className='stat-val mono' style={{ fontSize: 24, color: 'var(--dim2)' }}>{fmtDur(p.floor)}</div></div>
+          <div><div className='stat-label' style={{ color: 'var(--accent)' }}>Likely</div><div className='stat-val mono' style={{ fontSize: 40, color: 'var(--accent)' }}>{fmtDur(p.likely)}</div></div>
+          <div><div className='stat-label'>Ceiling</div><div className='stat-val mono' style={{ fontSize: 24, color: 'var(--dim2)' }}>{fmtDur(p.ceiling)}</div></div>
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}><div className='stat-label'>Target pace</div><div className='stat-val mono' style={{ fontSize: 18, color: 'var(--pace)' }}>{fmtPace(p.likely / targetKm, units)}{paceUnit(units)}</div></div>
+        </div>
+        <div className='sl-grid' style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', marginTop: 16 }}>
+          <KPI label='Training' value={p.recVol.toFixed(0)} unit={' ' + distUnit(units) + '/wk'} />
+          <KPI label='Freshness' value={p.freshness} unit='%' tone='cad' />
+          <KPI label='Specificity' value={p.specificity} unit='%' tone='pace' />
+        </div>
+        <div className='muted' style={{ fontSize: 13, marginTop: 12 }}>Projected from your best recent effort: {fmtDist(p.basis.km * KM, units)} {distUnit(units)} in {fmtDur(p.basis.sec)} ({fmtDate(p.basis.when, { month: 'short', day: 'numeric' })}). Longer extrapolations (e.g. marathon from a 10K) carry more uncertainty.</div>
+      </> : <div className='muted'>Need a recent run of 3 km or more to project a race time.</div>}
+    </div>
+    <div className='sl-panel'>
+      <div className='sl-h'><span className='dot' style={{ background: 'var(--pace)' }} />All distances</div>
+      <div className='sl-grid' style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
+        {all.map(({ name, p }) => <div key={name} className='kpi'><div className='stat-label'>{name}</div><div className='stat-val mono' style={{ fontSize: 22 }}>{p ? fmtDur(p.likely) : '-'}</div>{p && <div className='mono muted' style={{ fontSize: 11 }}>{fmtDur(p.floor)}-{fmtDur(p.ceiling)}</div>}</div>)}
+      </div>
+    </div>
+  </div>;
+}
+
 export default function App() {
   const [session, setSession] = useState(undefined);
   const [acts, setActs] = useState([]);
@@ -401,6 +479,6 @@ export default function App() {
   const open = (id) => { setOpenId(id); setTab('acts'); };
   if (session === undefined) return <div className='sl-root'><div className='sl-wrap'><div className='sl-panel' style={{ marginTop: 60 }}><span className='spin' /> loading...</div></div></div>;
   if (!session) return <div className='sl-root'><div className='sl-bg' /><div className='sl-wrap'><Login /></div></div>;
-  const tabs = [['dash', 'Dashboard'], ['acts', 'Activities'], ['trends', 'Trends'], ['coach', 'Coach'], ['settings', 'Settings']];
-  return <div className='sl-root'><div className='sl-bg' /><div className='sl-wrap'><div className='sl-top'><div><div className='sl-logo'><span className='tk' /> STRIDE<b>LAB</b></div><div className='sl-sub'>running telemetry - {acts.length} runs</div></div><div className='sl-tabs'>{tabs.map(([k, label]) => <button key={k} className={`sl-tab ${tab === k ? 'on' : ''}`} onClick={() => { setTab(k); if (k !== 'acts') setOpenId(null); }}>{label}</button>)}</div></div>{loadingRuns ? <div className='sl-panel'><span className='spin' /> loading your runs...</div> : err ? <div className='sl-panel' style={{ color: 'var(--hr)' }}>{err}</div> : acts.length === 0 ? <div className='sl-panel empty'><h2>No runs found</h2><p className='muted'>Your runs table returned no rows.</p></div> : <>{tab === 'dash' && <Dashboard acts={acts} units={units} maxHr={maxHr} onOpen={open} />}{tab === 'acts' && (openSummary ? <ActivityDetail summary={openSummary} units={units} maxHr={maxHr} onBack={() => setOpenId(null)} /> : <ActivityList acts={acts} units={units} maxHr={maxHr} onOpen={open} />)}{tab === 'trends' && <Trends acts={acts} units={units} maxHr={maxHr} />}{tab === 'coach' && <Coach acts={acts} units={units} maxHr={maxHr} />}{tab === 'settings' && <Settings units={units} setUnits={setUnits} maxHr={maxHr} setMaxHr={setMaxHr} />}</>}<div style={{ textAlign: 'center', marginTop: 30, fontSize: 11 }} className='mono muted'>StrideLab - {session.user?.email} - <span style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => supabase.auth.signOut()}>sign out</span></div></div></div>;
+  const tabs = [['dash', 'Dashboard'], ['acts', 'Activities'], ['trends', 'Trends'], ['race', 'Race IQ'], ['coach', 'Coach'], ['settings', 'Settings']];
+  return <div className='sl-root'><div className='sl-bg' /><div className='sl-wrap'><div className='sl-top'><div><div className='sl-logo'><span className='tk' /> STRIDE<b>LAB</b></div><div className='sl-sub'>running telemetry - {acts.length} runs</div></div><div className='sl-tabs'>{tabs.map(([k, label]) => <button key={k} className={`sl-tab ${tab === k ? 'on' : ''}`} onClick={() => { setTab(k); if (k !== 'acts') setOpenId(null); }}>{label}</button>)}</div></div>{loadingRuns ? <div className='sl-panel'><span className='spin' /> loading your runs...</div> : err ? <div className='sl-panel' style={{ color: 'var(--hr)' }}>{err}</div> : acts.length === 0 ? <div className='sl-panel empty'><h2>No runs found</h2><p className='muted'>Your runs table returned no rows.</p></div> : <>{tab === 'dash' && <Dashboard acts={acts} units={units} maxHr={maxHr} onOpen={open} />}{tab === 'acts' && (openSummary ? <ActivityDetail summary={openSummary} units={units} maxHr={maxHr} onBack={() => setOpenId(null)} /> : <ActivityList acts={acts} units={units} maxHr={maxHr} onOpen={open} />)}{tab === 'trends' && <Trends acts={acts} units={units} maxHr={maxHr} />}{tab === 'race' && <RaceIQ acts={acts} units={units} maxHr={maxHr} />}{tab === 'coach' && <Coach acts={acts} units={units} maxHr={maxHr} />}{tab === 'settings' && <Settings units={units} setUnits={setUnits} maxHr={maxHr} setMaxHr={setMaxHr} />}</>}<div style={{ textAlign: 'center', marginTop: 30, fontSize: 11 }} className='mono muted'>StrideLab - {session.user?.email} - <span style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => supabase.auth.signOut()}>sign out</span></div></div></div>;
 }
